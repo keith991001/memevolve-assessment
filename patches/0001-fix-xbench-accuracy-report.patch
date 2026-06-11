@@ -1,0 +1,31 @@
+diff --git a/Flash-Searcher-main/eval_utils.py b/Flash-Searcher-main/eval_utils.py
+index 8fe1e90..8184c20 100644
+--- a/Flash-Searcher-main/eval_utils.py
++++ b/Flash-Searcher-main/eval_utils.py
+@@ -169,8 +169,15 @@ def generate_unified_report(
+     successful = sum(1 for r in results if r.get("status") == "success")
+     errors = sum(1 for r in results if r.get("status") == "error")
+     
+-    correct = sum(1 for r in results if r.get("judgement", "").strip().lower() == "correct")
+-    incorrect = sum(1 for r in results if r.get("judgement", "").strip().lower() == "incorrect")
++    def _verdict(r):
++        # GAIA results carry a string `judgement`; xBench results carry a
++        # numeric `score` (0/1). Support both so xBench reports stop showing 0%.
++        if "score" in r:
++            return "correct" if r.get("score") == 1 else "incorrect"
++        return r.get("judgement", "").strip().lower()
++
++    correct = sum(1 for r in results if _verdict(r) == "correct")
++    incorrect = sum(1 for r in results if _verdict(r) == "incorrect")
+     
+     # Aggregate token usage and timing
+     total_tokens = 0
+@@ -193,7 +200,7 @@ def generate_unified_report(
+         for r in results:
+             level = r.get(level_key, "unknown")
+             by_level[level]["total"] += 1
+-            if r.get("judgement", "").strip().lower() == "correct":
++            if _verdict(r) == "correct":
+                 by_level[level]["correct"] += 1
+     
+     # Generate report

@@ -1,0 +1,90 @@
+diff --git a/Flash-Searcher-main/EvolveLab/providers/lightweight_memory_provider.py b/Flash-Searcher-main/EvolveLab/providers/lightweight_memory_provider.py
+index 2affc35..13dd9b9 100644
+--- a/Flash-Searcher-main/EvolveLab/providers/lightweight_memory_provider.py
++++ b/Flash-Searcher-main/EvolveLab/providers/lightweight_memory_provider.py
+@@ -639,7 +639,10 @@ class LightweightMemoryProvider(BaseMemoryProvider):
+ **Output Format (JSON):**
+ {{
+   "step_summary": "2-3 sentence summary of what agent did in this step",
+-  "key_extracts": ["item1", "item2", "item3"]
++  "key_extracts": [
++    {{"fact": "item1", "source": "site or page the value was read from", "verified": true}},
++    {{"fact": "item2", "source": null, "verified": false}}
++  ]
+ }}
+ 
+ **Task 1 - Step Summary Requirements:**
+@@ -666,13 +669,18 @@ Extract ONLY task-related information that is truly critical:
+ - Any meta-instructions about how to structure responses or use tools
+ 
+ **Extraction Rules:**
+-- Each item: ONE concise sentence (15-20 words max), **prefer direct quotes or close paraphrasing from the context to preserve original meaning**
++- Each "fact": ONE concise sentence (15-20 words max), **prefer direct quotes or close paraphrasing from the context to preserve original meaning**
+ - **ONLY extract information directly related to the TASK CONTENT, not execution mechanics**
+ - **DO NOT extract information already in working memory**
+ - Prioritize: Task Constraints > Key Data Values > Important Discoveries
+ - If nothing new/important related to the task, set "key_extracts" to empty array []
+ - **Preserve original meaning: quote or closely paraphrase the source text, don't rephrase unnecessarily**
+ 
++**Verification Gating (set per item):**
++- "verified": true ONLY if the value was read directly from a source present in the current step's context; name that source (site/page) in "source"
++- "verified": false for anything inferred, computed, assumed, or based on incomplete data (e.g., a location guessed from an address, a value averaged from conflicting sources)
++- If the agent searched for a datum and did NOT find it, record the gap itself as a fact (e.g., "coordinates of X not found yet") with "verified": false
++
+ **Critical Filter:**
+ Before extracting any item, ask: "Is this about the TASK CONTENT (data, constraints, results) or about SYSTEM INSTRUCTIONS (format, tools, workflow)?"
+ - If about task content → EXTRACT
+@@ -706,7 +714,17 @@ Before extracting any item, ask: "Is this about the TASK CONTENT (data, constrai
+             key_extracts = result.get("key_extracts", [])
+             if isinstance(key_extracts, list):
+                 for item in key_extracts:
+-                    item = str(item).strip()
++                    # Verification gating: keep provenance with each fact so the
++                    # injection side can separate verified facts from hypotheses.
++                    if isinstance(item, dict):
++                        fact = str(item.get("fact", "")).strip()
++                        source = str(item.get("source") or "").strip()
++                        if item.get("verified") and source:
++                            item = f"{fact} (source: {source})"
++                        else:
++                            item = f"[UNVERIFIED] {fact}"
++                    else:
++                        item = str(item).strip()
+                     if item and len(item) > 10:
+                         self.add_shortterm_item(item)
+                         self.logger.debug(f"Auto-extracted short-term item: {item[:60]}...")
+@@ -737,11 +755,30 @@ Before extracting any item, ask: "Is this about the TASK CONTENT (data, constrai
+             return None
+         
+         try:
+-            # Format short-term memory into readable text
++            # Verification gating: render verified facts and unverified
++            # hypotheses separately so the agent keeps questioning the latter.
++            tag = "[UNVERIFIED]"
++            verified = [i for i in self.shortterm_memory if not i.startswith(tag)]
++            unverified = [i[len(tag):].strip() for i in self.shortterm_memory if i.startswith(tag)]
++
+             content_lines = ["**Key Information & Constraints:**"]
+-            for idx, item in enumerate(self.shortterm_memory, 1):
+-                content_lines.append(f"{idx}. {item}")
+-            
++            idx = 1
++            if verified:
++                content_lines.append("Verified facts (with sources):")
++                for item in verified:
++                    content_lines.append(f"{idx}. {item}")
++                    idx += 1
++            if unverified:
++                content_lines.append("Unverified working hypotheses:")
++                for item in unverified:
++                    content_lines.append(f"{idx}. {item}")
++                    idx += 1
++                content_lines.append(
++                    "Caution: items above are hypotheses, not established facts. "
++                    "Before using any unverified or missing value in reasoning or "
++                    "calculations, verify it via search first."
++                )
++
+             content = "\n".join(content_lines)
+             
+             self._memory_id_counter += 1
