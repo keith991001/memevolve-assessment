@@ -13,6 +13,8 @@
 | ExpeL（semantic baseline） | **17/20 (85%)** | 274,383 (+45%) | 18.2 | 19/20 |
 | Voyager（procedural baseline） | **18/20 (90%)** | 200,074 (+6%) | 16.7 | **0/20**（记忆库静默为空） |
 
+![Accuracy vs cost](assets/accuracy_vs_cost.png)
+
 我的主要发现：强基线（90%）下 memory 的准确率收益约等于 0，成本却显著上升；收益（问题框架固定、策略迁移）和伤害（未验证的中间结论被记忆"钉死"）集中在难题上互相抵消；Voyager 的技能抽取和深搜任务结构性不匹配、静默失效。过程中我还发现并修复了 xBench 判分统计恒为 0% 的 harness bug，并给 lightweight 的 working memory 做了一个"验证门控" patch + ablation（结果为负向，但机制层面的分析见报告 §6.1）。
 
 **完整报告：[REPORT.md](REPORT.md)**（实验设置 / 结果 / case 分析 / limitation / 改进与 ablation）
@@ -20,10 +22,12 @@
 ## 仓库结构
 
 ```
-REPORT.md                                      实验报告（核心交付物）
+REPORT.md                                      实验报告（核心交付物，含轨迹证据附录）
 scripts/summarize_results.py                   结果汇总脚本（task_id 对齐 + 去重）
+scripts/make_figures.py                        报告插图生成脚本
 patches/0001-fix-xbench-accuracy-report.patch  xBench 判分统计 bug 修复
 patches/0002-add-verification-gating.patch     working memory 验证门控（方法级 patch）
+assets/                                        报告插图
 ```
 
 原始轨迹（5 组 jsonl）和记忆库终态在我本地归档。因为里面含 xBench 解密后的题目明文，官方要求不上传公网，需要的话可以线下提供。

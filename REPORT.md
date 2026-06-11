@@ -65,6 +65,8 @@ ExpeL         oxooooooxoooooooooox
 Voyager       oxoooooooooooooxoooo
 ```
 
+![Accuracy vs cost](assets/accuracy_vs_cost.png)
+
 总成本：4 组 × 20 条大约 1,860 万 token（输入占 93%），按 DeepSeek-V4-Flash 计价合计 15 元左右。
 
 跑完第一组我就发现基线比预想强很多：无记忆就有 90%，比论文里的 69% 高出一截（应该是前 20 条偏简单，加上执行模型比论文当时更强）。这直接导致**所有 memory system 的准确率收益是 0 或负的，而成本全都显著上升**。收益和伤害集中在少数难题上互相抵消，§3 逐条拆。方向上这和论文 Table 3 一致（xBench 上多数人工 memory baseline 不增益甚至降分），只是在我的设置下更极端。
@@ -91,7 +93,9 @@ Voyager       oxoooooooooooooxoooo
 - **ExpeL（答错，195 万 token）**：注入的相似案例和几何计算毫无关系，纯噪声，agent 在反复检索里烧掉了基线整组一半的 token。
 - Voyager（答错，102 万 token）：它是零注入状态（见 Case D），失败属于这道题本身方差大。
 
-这条是整个实验里我觉得最重要的样本：**记忆会把早期没验证过的中间结论"钉死"，让 agent 失去自我纠错能力**。它也暴露了框架没有成本止损——一条任务烧到 195 万 token 没有任何告警。
+![Task 10 tokens](assets/task10_tokens.png)
+
+这条是整个实验里我觉得最重要的样本：**记忆会把早期没验证过的中间结论"钉死"，让 agent 失去自我纠错能力**。它也暴露了框架没有成本止损——一条任务烧到 195 万 token 没有任何告警。注入原文见附录 B。
 
 ### Case C（任务 17）：memory 无能为力——历任校长姓氏统计
 
@@ -157,8 +161,74 @@ Voyager       oxoooooooooooooxoooo
 |---|---|
 | `REPORT.md` | 本报告 |
 | `scripts/summarize_results.py` | 结果汇总脚本（task_id 对齐 + 去重 + 对比表/逐题网格） |
+| `scripts/make_figures.py` | 报告插图生成脚本（从原始 jsonl 直接出图） |
 | `patches/0001-fix-xbench-accuracy-report.patch` | eval_utils.py 判分统计 bug 修复 |
 | `patches/0002-add-verification-gating.patch` | lightweight working memory 验证门控（方法级 patch，ablation 见 §6.1） |
-| `xbench_output/`（本地，不入库） | 5 组原始轨迹 jsonl + 记忆库终态归档（含解密题文，遵循 xBench 不上传明文的要求，可应要求线下提供） |
+| `assets/` | 报告插图 |
+| 结果压缩包（随仓库一并提交） | 5 组原始轨迹 jsonl + 各运行目录 + 记忆库终态归档（含 xBench 解密题文，按官方要求不传公网） |
+
+## 附录：关键轨迹证据（memory_guidance 原文摘录）
+
+### A. 任务 5 · Lightweight 原版（答对）——正确的问题框架在第 1 步就被注入
+
+```
+**Key Information & Constraints:**
+1. The task requires identifying the specific item described in the second half
+   of the 'bird and cage' line from 'The Shawshank Redemption'.
+2. GB/T 11881-2006 is a Chinese national standard likely related to down and
+   feather products.
+3. The final calculation must determine the minimum number of domestic animals
+   (e.g., ducks, geese) each possessing that item to produce 10 conforming products.
+```
+
+注：第 2 条其实是个错误假设（见附录 D），但它恰好没有影响最终数值，原版"侥幸"答对。
+
+### B. 任务 10 · Lightweight 原版（答错，173 万 token）——残缺坐标被当作"已确认事实"钉死
+
+```
+**Key Information & Constraints:**
+1. 文天祥祠坐标：39°56′3.49″N 116°24′14.37″E / 39.9343028°N 116.4039917°E
+2. 袁崇焕祠坐标：39°53′36.96″N 116°25′54.23″E / 39.8936000°N 116.4317306°E
+3. 于谦祠搜索结果未提供经纬度，仅给出地址：东城区西裱褙胡同23号
+```
+
+三条以同等的"事实"地位注入，第 3 条的缺口没有任何标记，后续步骤直接拿残缺数据计算，再未质疑。
+
+### C. 任务 10 · Lightweight 门控版（仍答错但 token -39%）——假设被标记、缺口被显式追踪
+
+第 1 步（别名猜测被正确隔离）：
+
+```
+**Key Information & Constraints:**
+Unverified working hypotheses:
+1. 文天祥祠堂 is also known as 文天祥祠 (Wen Tianxiang Temple).
+2. 于谦祠堂 is also known as 于忠肃公祠 (Yu Qian Temple).
+3. 袁崇焕祠堂 may be referenced as 袁督师庙 or 袁崇焕墓.
+Caution: items above are hypotheses, not established facts. Before using any
+unverified or missing value in reasoning or calculations, verify it via search first.
+```
+
+第 6 步（缺口被记录成显式事实，坐标补齐后带来源）：
+
+```
+Verified facts (with sources):
+1. 文天祥祠堂地址: 东城区府学胡同63号 (source: web_search …)
+4. 文天祥祠百度百科页面未提供经纬度坐标 (source: baike.baidu.com/…)
+5. 于谦祠堂百度百科页面未返回坐标信息 (source: baike.baidu.com/…)
+7. 文天祥祠 coordinates: 39°56′3.49″N 116°24′14.37″E (source: Wikipedia)
+```
+
+### D. 任务 5 · Lightweight 门控版（答错）——门控推翻了错误假设，但 agent 倒在矛盾消解上
+
+```
+Verified facts (with sources):
+1. GB/T 11881-2006是《羽毛球》国家标准，而非羽绒羽毛标准 (source: 全国标准信息公共服务平台及百度百科)
+3. 每颗羽毛球需要16根羽毛。 (source: 维基百科、社区帖子)
+4. 一只鹅身上只有14片羽毛能用来做羽毛球…单侧翅膀仅6-7根可用。 (source: 知乎专栏、搜狐文章)
+5. 制作一个羽毛球需要16只鸭或鹅的同一边翅膀的羽毛。 (source: 江苏与台湾网站、Threads帖子)
+6. 一颗羽毛球有16支羽毛，至少要用4只鹅才能做出一颗比赛球。 (source: 绿色情报员（RFA）)
+```
+
+第 1 条纠正了原版的错误假设（对照附录 A 第 2 条），但第 3–6 条互相矛盾且都标着"已验证"，agent 最终聚合失败答 8（golden=12）。这就是 §6.1 说的：验证门控暴露矛盾，但不解决矛盾。
 
 *实验日期：2026-06-11。环境：macOS / Python 3.10 / DeepSeek API。*
