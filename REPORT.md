@@ -185,15 +185,12 @@ Voyager       oxoooooooooooooxoooo
 | `assets/` | 报告插图 |
 | 结果压缩包（随仓库一并提交） | 5 组原始轨迹 jsonl + 各运行目录 + 记忆库终态归档（含 xBench 解密题文，按官方要求不传公网） |
 
-## 8. 讨论：与 2025–2026 顶会同类工作的对比与进一步改进方向
+## 8. 讨论：与同类工作的对比与进一步改进方向
 
 写完上面的实验分析后，我调研了 2025–2026 年"记忆系统自进化"方向已被顶会正式接收的论文（接收信息逐一对到 OpenReview / 官方 proceedings / ACL Anthology，arXiv-only 的一律排除），挑了三篇最强的和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
 
-### 8.1 筛选
 
-入选三篇：**A-Mem**（NeurIPS 2025 主会，[proceedings](https://proceedings.neurips.cc/paper_files/paper/2025/hash/19909c36f51abc4856b4560aff3d36d6-Abstract-Conference.html)）、**ReasoningBank**（ICLR 2026，[OpenReview](https://openreview.net/forum?id=jL7fwchScm)）、**MemGen**（ICLR 2026，[OpenReview](https://openreview.net/forum?id=vI56m4Iu4e)）。落选说明：Agent Workflow Memory（ICML 2025）已是 EvolveLab 内置 baseline，对比无新意；Memp 在 ARR 2026 在审、不满足"已接收"；HGM / Memento / Mem0 / Memory-R1 接收未核实。另有四篇 harness/工作流进化方向的顶会工作（DGM、AFlow、AgentSquare、Gödel Agent）不属于记忆论文，留作 8.3 节改进建议的机制来源。
-
-### 8.2 逐维对比
+### 8.1 对比
 
 | 维度 | **MemEvolve** (ICML'26) | **A-Mem** (NeurIPS'25) | **ReasoningBank** (ICLR'26) | **MemGen** (ICLR'26) |
 |---|---|---|---|---|
@@ -207,7 +204,7 @@ Voyager       oxoooooooooooooxoooo
 
 这张表和我的实验形成了很整齐的对应：MemEvolve 在"架构层"进化，而三篇分别在**内容组织层**（A-Mem）、**写入质量层**（ReasoningBank）、**注入时机层**（MemGen）做了 MemEvolve 没做的事——恰好是我在 Case B（错误固化）、Case D（静默失败）和成本数据里观察到的三类问题所在的层面。
 
-### 8.3 结合对比的改进建议（每条注明借鉴来源）
+### 8.2 改进方向
 
 1. **选择机制：archive + 树搜索替代 K=1 贪心**（针对 §5 的 fitness 噪声）。借鉴 DGM（ICLR 2026）的开放式 archive——保留全部历史候选、按"性能+新颖性"采样父代，以及 AFlow（ICLR 2025 Oral）的 MCTS 回传统计。落点在 `evolve_cli.py` 的 tournament：维护 archive、淘汰前做配对 bootstrap 检验。我实测同一道题在不同设置下 token 36 万~195 万、对错来回翻转，60 条轨迹的单次排名基本是噪声，这条优先级最高。AgentSquare（ICLR 2025）的 performance predictor 还能在花钱跑轨迹前预筛掉明显差的候选。
 2. **写入验证标准化：把 self-judge 纳入 Encode 接口**（针对 Case B 错误固化）。借鉴 ReasoningBank：写入前先判轨迹成败，成功蒸馏策略、失败蒸馏反模式，而不是把原始中间结论直接入库。我的验证门控 ablation 证明"只标记不仲裁"不够（暴露矛盾但解决不了矛盾），ReasoningBank 是在蒸馏阶段就完成质量把关。做法：在 `BaseMemoryProvider.take_in_memory` 前加统一 judge 钩子，让它成为设计空间的固定算子。
