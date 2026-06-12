@@ -1,7 +1,25 @@
-# 题目一实验报告：Memory Systems that Evolve
+# 实验报告：Memory Systems that Evolve
 
-> 前沿 AI 方向在线考核 · 题目一 · 论文：[MemEvolve: Meta-Evolution of Agent Memory Systems](https://arxiv.org/abs/2512.18746)（arXiv 2512.18746）
-> 实验基于官方实现 [bingreeky/MemEvolve](https://github.com/bingreeky/MemEvolve)（commit `6035d56`）。本仓库只放我自己的产出：报告、分析脚本和对原代码的两个 patch（`patches/` 目录，diff 形式），复现步骤见 README。
+> 论文：[MemEvolve: Meta-Evolution of Agent Memory Systems](https://arxiv.org/abs/2512.18746)（arXiv 2512.18746）
+> 实验基于官方实现 [bingreeky/MemEvolve](https://github.com/bingreeky/MemEvolve)（commit `6035d56`）。复现步骤见 README。
+
+
+
+## 0.论文讨论
+
+# 方法
+EvolveLab（基础设施）：先把 12 个代表性记忆系统统一重实现到一个模块化设计空间里，任何记忆系统都被分解为四个组件——Encode（把原始经验转成结构化表示）、Store（持久化存储）、Retrieve（按上下文召回）、Manage（整合与遗忘）。这四元组就构成一个记忆架构的"基因型"，让架构层面的进化变得可操作。
+MemEvolve（双层优化）：这是个典型的 bilevel 结构，跟 MAML 的内外环逻辑一脉相承：
+
+内环（经验进化）：固定一组候选记忆架构，让 Agent 带着每个架构跑一批任务（每轮 60 条轨迹），往记忆库里填经验，同时收集三维反馈：任务成功率、token 成本、延迟。
+外环（架构进化）：用 Pareto 排序在性能/成本/延迟之间做非支配筛选，保留 top-K 架构作为"父代"，然后通过 Diagnose-and-Design 产生后代——先用 LLM 回放轨迹诊断出结构性缺陷（如检索失败、抽象无效、记忆内容过长），生成缺陷报告，再据此只在四个模块的允许范围内做受约束的重新设计，每个父代产出 S=3 个变体。
+
+两个环形成正反馈：更好的架构让 Agent 学得更快，更强的 Agent 产生更高质量的轨迹，给外环提供更精确的适应度信号。
+
+# 主要结论
+性能：在 GAIA、xBench-DS、WebWalkerQA、TaskCraft 四个基准上，MemEvolve 给 SmolAgent 和 Flash-Searcher 带来最高 17.06% 的提升。Flash-Searcher+GPT-5-mini 在 GAIA 上 pass@3 达到 80.61%，超过 OWL-Workforce、CK-Pro 等多智能体系统。而且成本几乎没涨（GAIA 上每任务 $0.085 vs 无记忆基线 $0.086）。
+泛化性：这是比较有说服力的部分——在 TaskCraft 上进化出的记忆系统，不做任何任务特定调整，直接迁移到更难的基准、换成没见过的底座模型（Kimi K2、DeepSeek V3.2）、甚至插到完全不同的 Agent 框架（OWL、CK-Pro）上，都有一致提升。说明它学到的是任务无关的记忆设计原则，而非过拟合某个数据集。作者也坦诚了边界：在共享任务范式内可以泛化，但跨到根本不同的任务族（如具身智能）大概率不行。
+涌现出的设计规律：观察进化轨迹（AgentKB → Riva → Cerebra）发现几个趋势——记忆的编解码越来越依赖 Agent 自主决策而非预定义流水线（agentic 化）、层级化组织、多粒度抽象，后期还自发学会了从经验中蒸馏可复用工具并定期维护记忆库。
 
 ## 1. 实验设置
 
