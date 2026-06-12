@@ -2,7 +2,7 @@
 
 这是我的题目一提交：在 Flash-Searcher 上用 `deepseek-v4-flash`，在 xBench-DeepSearch 前 20 条任务上跑了 No-Memory 对照、MemEvolve 进化产物（lightweight_memory）和两个人工 memory baseline（ExpeL、Voyager），共 6 组实验（含一组方法级 patch 的 ablation）、120 条任务，并做了轨迹级的成功/失败 case 分析。
 
-实验基于官方实现 [bingreeky/MemEvolve](https://github.com/bingreeky/MemEvolve)（commit `6035d56`）。原代码不在本仓库里，我的改动以 diff 形式放在 `patches/`，按下面的步骤可以完整复现。
+实验基于官方实现 [bingreeky/MemEvolve](https://github.com/bingreeky/MemEvolve)（commit `6035d56`）。原代码不在本仓库里，改动以 diff 形式放在 `patches/`，按下面的步骤可以完整复现。
 
 ## 主结果
 
@@ -15,7 +15,7 @@
 
 ![Accuracy vs cost](assets/accuracy_vs_cost.png)
 
-我的主要发现：强基线（90%）下 memory 的准确率收益约等于 0，成本却显著上升；收益（问题框架固定、策略迁移）和伤害（未验证的中间结论被记忆"钉死"）集中在难题上互相抵消；Voyager 的技能抽取和深搜任务结构性不匹配、静默失效。过程中我还发现并修复了 xBench 判分统计恒为 0% 的 harness bug，并给 lightweight 的 working memory 做了一个"验证门控" patch + ablation（结果为负向，但机制层面的分析见报告 §6.1）。
+主要发现：强基线（90%）下 memory 的准确率收益约等于 0，成本却显著上升；收益（问题框架固定、策略迁移）和伤害（未验证的中间结论被记忆"钉死"）集中在难题上互相抵消；Voyager 的技能抽取和深搜任务结构性不匹配、静默失效。过程中还发现并修复了 xBench 判分统计恒为 0% 的 harness bug，并给 lightweight 的 working memory 做了一个"验证门控" patch + ablation（结果为负向，但机制层面的分析见报告 §6.1）。
 
 **完整报告：[REPORT.md](REPORT.md)**（实验设置 / 结果 / case 分析 / limitation / 改进与 ablation）
 
@@ -30,7 +30,7 @@ patches/0002-add-verification-gating.patch     working memory 验证门控（方
 assets/                                        报告插图
 ```
 
-原始轨迹（5 组 jsonl）和记忆库终态在我本地归档。因为里面含 xBench 解密后的题目明文，官方要求不上传公网，需要的话可以线下提供。
+原始轨迹（5 组 jsonl）和记忆库终态在本地归档。因为里面含 xBench 解密后的题目明文，官方要求不上传公网。
 
 ## 复现步骤
 
@@ -70,4 +70,4 @@ python run_flash_searcher_mm_xbench.py \
 python summarize_results.py xbench_output/*_20.jsonl
 ```
 
-总成本参考：6 组 × 20 条约 2,500 万 token，DeepSeek-V4-Flash 计价 20 元左右；全程不需要 GPU。
+总成本参考：6 组 × 20 条约 2,500 万 token，DeepSeek-V4-Flash 计价 20 元左右。
