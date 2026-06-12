@@ -185,6 +185,37 @@ Voyager       oxoooooooooooooxoooo
 | `assets/` | 报告插图 |
 | 结果压缩包（随仓库一并提交） | 5 组原始轨迹 jsonl + 各运行目录 + 记忆库终态归档（含 xBench 解密题文，按官方要求不传公网） |
 
+## 8. 讨论：与 2025–2026 顶会同类工作的对比与进一步改进方向
+
+写完上面的实验分析后，我调研了 2025–2026 年"记忆系统自进化"方向已被顶会正式接收的论文（接收信息逐一对到 OpenReview / 官方 proceedings / ACL Anthology，arXiv-only 的一律排除），挑了三篇最强的和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
+
+### 8.1 筛选
+
+入选三篇：**A-Mem**（NeurIPS 2025 主会，[proceedings](https://proceedings.neurips.cc/paper_files/paper/2025/hash/19909c36f51abc4856b4560aff3d36d6-Abstract-Conference.html)）、**ReasoningBank**（ICLR 2026，[OpenReview](https://openreview.net/forum?id=jL7fwchScm)）、**MemGen**（ICLR 2026，[OpenReview](https://openreview.net/forum?id=vI56m4Iu4e)）。落选说明：Agent Workflow Memory（ICML 2025）已是 EvolveLab 内置 baseline，对比无新意；Memp 在 ARR 2026 在审、不满足"已接收"；HGM / Memento / Mem0 / Memory-R1 接收未核实。另有四篇 harness/工作流进化方向的顶会工作（DGM、AFlow、AgentSquare、Gödel Agent）不属于记忆论文，留作 8.3 节改进建议的机制来源。
+
+### 8.2 逐维对比
+
+| 维度 | **MemEvolve** (ICML'26) | **A-Mem** (NeurIPS'25) | **ReasoningBank** (ICLR'26) | **MemGen** (ICLR'26) |
+|---|---|---|---|---|
+| 进化对象 | **记忆架构**（E/U/R/G 四模块代码） | 记忆内容的**组织结构** | 记忆内容（推理策略） | 记忆的**生成器**（参数化） |
+| 记忆表示 | token 级，形态由进化出的架构决定 | Zettelkasten 式结构化笔记网络（上下文/关键词/标签 + 链接） | 自然语言"推理策略"条目 | **latent token 序列**（机器原生） |
+| 写入机制 | 由 Encode 决定，无统一验证 | 写入即结构化，**新记忆回溯触发旧记忆修订** | 写入前 **self-judge 判成败**，失败也蒸馏入库（反模式） | memory weaver 按需生成，无显式写入 |
+| 检索/注入 | 由 Retrieve 决定（Lightweight 为每 3 步注入） | 语义链接网络导航 | 检索策略 + memory-aware test-time scaling | **memory trigger 学习"何时注入"** |
+| 评测 | GAIA / xBench / WebWalkerQA / TaskCraft | 长对话/QA 基准 | WebArena / Mind2Web / SWE-Bench-Verified | 多 agent 基准，超 ExpeL/AWM 最高 38.22% |
+| 相对优势 | 唯一做**架构级** meta-进化，统一设计空间 | 记忆条目可修订，天然抗"错误固化" | 写入有质量门 + 从失败学习 | 注入时机可学习，涌现记忆分化 |
+| 相对短板 | 条目写入后不可修订；fitness 噪声大；无成本控制 | 不进化架构 | 策略粒度单一，不进化架构 | 需训练参数，跨模型迁移弱 |
+
+这张表和我的实验形成了很整齐的对应：MemEvolve 在"架构层"进化，而三篇分别在**内容组织层**（A-Mem）、**写入质量层**（ReasoningBank）、**注入时机层**（MemGen）做了 MemEvolve 没做的事——恰好是我在 Case B（错误固化）、Case D（静默失败）和成本数据里观察到的三类问题所在的层面。
+
+### 8.3 结合对比的改进建议（每条注明借鉴来源）
+
+1. **选择机制：archive + 树搜索替代 K=1 贪心**（针对 §5 的 fitness 噪声）。借鉴 DGM（ICLR 2026）的开放式 archive——保留全部历史候选、按"性能+新颖性"采样父代，以及 AFlow（ICLR 2025 Oral）的 MCTS 回传统计。落点在 `evolve_cli.py` 的 tournament：维护 archive、淘汰前做配对 bootstrap 检验。我实测同一道题在不同设置下 token 36 万~195 万、对错来回翻转，60 条轨迹的单次排名基本是噪声，这条优先级最高。AgentSquare（ICLR 2025）的 performance predictor 还能在花钱跑轨迹前预筛掉明显差的候选。
+2. **写入验证标准化：把 self-judge 纳入 Encode 接口**（针对 Case B 错误固化）。借鉴 ReasoningBank：写入前先判轨迹成败，成功蒸馏策略、失败蒸馏反模式，而不是把原始中间结论直接入库。我的验证门控 ablation 证明"只标记不仲裁"不够（暴露矛盾但解决不了矛盾），ReasoningBank 是在蒸馏阶段就完成质量把关。做法：在 `BaseMemoryProvider.take_in_memory` 前加统一 judge 钩子，让它成为设计空间的固定算子。
+3. **记忆可修订：A-Mem 式回溯更新**（错误固化的另一半解法）。A-Mem 的"新记忆触发旧记忆修订"正是矛盾仲裁的现成方案——我实验里 #5 任务"羽绒标准 vs 羽毛球标准"两条矛盾记忆并存导致聚合失败，在 A-Mem 框架下新证据会直接改写旧条目。做法：给 Manage 模块加 `reconcile(new, conflicting_old)` 操作，仲裁策略（权威源优先/多数表决）交给进化去搜。
+4. **注入时机可学习**（针对成本失控）。Lightweight 每 3 步无条件注入是写死的，MemGen 的 memory trigger 证明"该不该注入"本身可学。不训练参数的轻量做法：注入前加一次小模型判定，触发率纳入 fitness；同时把单任务 token 上限做成 Manage 模块的熔断算子——AFlow 把推理成本压到 GPT-4o 的 4.55% 证明成本可以是显式优化目标。
+5. **记忆健康度自检**（针对 Case D 静默失败）。借鉴 DGM"每次自我修改必须经验性验证"的纪律：任何记忆架构部署前先过 store→retrieve 往返冒烟测试，运行中输出命中率、零存储即告警。纯代码级几十行，否则 Voyager 这类"静默死亡"候选会持续污染外层进化的 fitness 信号。
+6. **设计空间本身可以再进化**（方法论展望，呼应 §6）。MemGen 证明 latent 记忆可行、Gödel Agent（ACL 2025）指出人工限定的设计空间存在表达力天花板——E/U/R/G 接口里没有"注入时机"和"记忆载体形态"这两个维度，它们未来也应进入可进化范围。
+
 ## 附录：关键轨迹证据（memory_guidance 原文摘录）
 
 ### A. 任务 5 · Lightweight 原版（答对）——正确的问题框架在第 1 步就被注入
