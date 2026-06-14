@@ -8,7 +8,7 @@
 ## 0.论文内容
 ### 方法
 EvolveLab（基础设施）：先把 12 个代表性记忆系统统一重实现到一个模块化设计空间里，任何记忆系统都被分解为四个组件——Encode（把原始经验转成结构化表示）、Store（持久化存储）、Retrieve（按上下文召回）、Manage（整合与遗忘）。这四元组就构成一个记忆架构的"基因型"，让架构层面的进化变得可操作。
-MemEvolve（双层优化）：这是个典型的 bilevel 结构，跟 MAML 的内外环逻辑一致：
+MemEvolve（双层优化）：这是个典型的 bilevel 结构，形式上类似 meta-learning 的内外环（但不是基于梯度，而是 LLM 驱动的离散搜索）：
 
 内环（经验进化）：固定一组候选记忆架构，让 Agent 带着每个架构跑一批任务（每轮 60 条轨迹），往记忆库里填经验，同时收集三维反馈：任务成功率、token 成本、延迟。
 外环（架构进化）：用 Pareto 排序在性能/成本/延迟之间做非支配筛选，保留 top-K 架构作为"父代"，然后通过 Diagnose-and-Design 产生后代——先用 LLM 回放轨迹诊断出结构性缺陷（如检索失败、抽象无效、记忆内容过长），生成缺陷报告，再据此只在四个模块的允许范围内做受约束的重新设计，每个父代产出 S=3 个变体。
@@ -29,39 +29,51 @@ MemEvolve（双层优化）：这是个典型的 bilevel 结构，跟 MAML 的�
 | 模型 | `deepseek-v4-flash`（DeepSeek 官方 API，OpenAI 兼容接口） |
 | 判分 | LLM-as-a-Judge，裁判模型同为 `deepseek-v4-flash`（裁判与被试同源，§5 有讨论） |
 | Benchmark | xBench-DeepSearch（2505 版加密 CSV），取前 20 条（`data[:20]`，四个设置看到的任务集合与顺序完全一致） |
-| Memory 设置 | ① No-Memory（对照）② `lightweight_memory`（**MemEvolve 自动进化产物**，用的是官方发布版本，我没有重新跑 meta-evolution）③ `expel`（semantic 记忆 baseline）④ `voyager`（procedural 记忆 baseline） |
+| Memory 设置 | ① No-Memory（对照）② `lightweight_memory`（**MemEvolve 自动进化产物**，用的是官方发布版本，我没有重新跑 meta-evolution）③ `expel`（semantic 记忆 baseline）④ `voyager`（procedural 记忆 baseline）；另有 ⑤ Lightweight + 验证门控 patch（§6.1 的 ablation） |
+| 实验规模 | 5 组 × 20 条 = 100 条任务（主实验 4 组 80 条 + ablation 1 组 20 条）；另有若干冒烟/调试重跑不计入报告 |
 | 运行参数 | `max_steps=40`；memory 组 `concurrency=1`（串行，保证记忆逐条积累，对应论文的 online 模式）；No-Memory 组 `concurrency=4` |
 | 控制变量 | 每个 memory run 开始前我都清空了对应的 `storage/<provider>/`，保证从空记忆起步；跑完立刻把记忆终态归档备份 |
+| ⚠️ 已知混淆 | `lightweight_memory` 初始化即注入 7 条出厂"冷启动记忆"（5 策略 + 2 操作），严格说它和"空记忆起步"的 baseline 不在同一起跑线，解读 Lightweight 结果时需考虑此项（详见 §5）。 |
 
 ### 复现命令
 
+> ⚠️ `patches/0002`（验证门控）会改写 `lightweight_memory_provider.py`。它**只用于 §6.1 的 ablation**——主实验四组**绝对不要**应用它，否则跑出来的"原版 Lightweight"已被污染。下面拆成两段，互不混用。
+
+**主实验 4 组（只 apply 0001）：**
+
 ```bash
-# 准备：克隆官方仓库并固定到我实验时的版本，再应用本仓库的 patch
 git clone https://github.com/bingreeky/MemEvolve.git && cd MemEvolve
 git checkout 6035d56
-git apply <本仓库>/patches/0001-fix-xbench-accuracy-report.patch
-git apply <本仓库>/patches/0002-add-verification-gating.patch   # 仅复现 §6.1 的 ablation 时需要
+git apply <本仓库>/patches/0001-fix-xbench-accuracy-report.patch   # 只修判分统计 bug
 cp <本仓库>/scripts/summarize_results.py Flash-Searcher-main/
-
-# 环境：Python 3.10 + Flash-Searcher-main/requirements.txt，.env 配置见 .env.example
-cd Flash-Searcher-main
+cd Flash-Searcher-main   # 环境：Python 3.10 + requirements.txt，.env 见 .env.example
 
 # Run 0: No-Memory 对照
 python run_flash_searcher_mm_xbench.py \
-    --infile ./data/xbench/DeepSearch.csv \
-    --outfile ./xbench_output/nomem_20.jsonl \
+    --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/nomem_20.jsonl \
     --sample_num 20 --max_steps 40 --concurrency 4
 
-# Run 1–3: 三个 memory system（memory_provider 依次换成 expel / voyager）
+# Run 1–3: 三个 memory system（memory_provider 依次换成 lightweight_memory / expel / voyager；每次先清空对应 storage）
 rm -rf storage/lightweight_memory
 python run_flash_searcher_mm_xbench.py \
-    --infile ./data/xbench/DeepSearch.csv \
-    --outfile ./xbench_output/lightweight_20.jsonl \
-    --memory_provider lightweight_memory \
-    --sample_num 20 --max_steps 40
+    --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/lightweight_20.jsonl \
+    --memory_provider lightweight_memory --sample_num 20 --max_steps 40
 
-# 结果汇总（绕过 eval_utils.py 的判分统计 bug，见 §5）
-python summarize_results.py xbench_output/*_20.jsonl
+python summarize_results.py xbench_output/*_20.jsonl   # 汇总（绕过 eval_utils 判分 bug，见 §5）
+```
+
+**ablation（§6.1，在一份干净 checkout 上额外 apply 0002）：**
+
+```bash
+git clone https://github.com/bingreeky/MemEvolve.git memevolve-ablation && cd memevolve-ablation
+git checkout 6035d56
+git apply <本仓库>/patches/0001-fix-xbench-accuracy-report.patch
+git apply <本仓库>/patches/0002-add-verification-gating.patch    # 仅此分支应用
+cp <本仓库>/scripts/summarize_results.py Flash-Searcher-main/ && cd Flash-Searcher-main
+rm -rf storage/lightweight_memory
+python run_flash_searcher_mm_xbench.py \
+    --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/lightweight_gated_20.jsonl \
+    --memory_provider lightweight_memory --sample_num 20 --max_steps 40
 ```
 
 ## 2. 主结果
@@ -87,6 +99,8 @@ Voyager       oxoooooooooooooxoooo
 总成本：4 组 × 20 条大约 1,860 万 token（输入占 93%），按 DeepSeek-V4-Flash 计价合计 15 元左右。
 
 跑完第一组发现基线比预想强很多：无记忆就有 90%，比论文里的 69% 高出一截（应该是前 20 条偏简单，加上执行模型比论文当时更强）。这直接导致**所有 memory system 的准确率收益是 0 或负的，而成本全都显著上升**。收益和伤害集中在少数难题上互相抵消，§3 逐条拆。方向上这和论文 Table 3 一致（xBench 上多数人工 memory baseline 不增益甚至降分），只是在我的设置下更极端。
+
+> **本实验最重要的观察（详见 §3 Case B）**：memory 不只是"可能没用"，它会主动帮倒忙——把 agent 早期**未经验证的中间结论当成"已确认事实"固化注入**，使后续步骤丧失自我纠错能力。最典型的任务上，无记忆基线 36 万 token 答对，而带 Lightweight 记忆的 agent 拿着残缺坐标硬算、烧到 173 万 token 仍答错。这是"记忆架构该如何写入与注入"这一设计问题，而非"记忆有没有用"的问题。
 
 ## 3. 成功 / 失败 Case 分析（题目 iii）
 
@@ -124,16 +138,17 @@ Voyager       oxoooooooooooooxoooo
 
 ## 4. 哪种形态的 memory 更有效？（题目 iv）
 
-按我拿到的证据分形态说：
+题目问的是 episodic / semantic / procedural / tool-use 四类。先做个澄清，因为它影响下面怎么归类：**Lightweight 注入的主要是 working memory（任务内的状态保持——当前已知事实、待办约束），这其实不在题目列的四类里**；而 episodic memory 严格指**跨任务的轨迹样例**。Lightweight 实际是 working + 轻量 episodic 的混合体，不是纯 episodic。把这层说清后按四类（+ working）分述：
 
-| 形态 | 本实验载体 | 证据 | 我的判断 |
-|---|---|---|---|
-| Working/episodic（任务内事实与框架） | Lightweight 的 guidance 注入 | Case A 救场、Case B 闯祸 | 双刃剑：适合事实密集的多跳题，但必须配验证门控，否则会固化错误 |
-| Semantic（跨任务抽象经验） | ExpeL（积累了 80 条 insights） | Case A 策略迁移成功；其余多为噪声且成本最高 | 偶发收益，命门在检索相关性——无关案例占着上下文就是纯负担 |
-| Procedural（技能/工作流库） | Voyager（积累了 0 条） | Case D 静默失效 | 和深搜任务族结构性不匹配：轨迹里没有可封装的"技能" |
-| Tool-use memory（API/工具用法） | 这次没有单独覆盖 | 论文 Figure 7 里 Lightweight 的 tool-use suggestion 属此类 | 推断最适合工具行为可复用的场景（比如用 MediaWiki API 查历史版本） |
+| 形态 | 严格定义 | 本实验载体 | 证据 | 我的判断 |
+|---|---|---|---|---|
+| Working（任务内状态保持） | 当前任务的中间事实/约束，任务结束即弃 | Lightweight 的 guidance 注入（主体） | Case A 救场、Case B 闯祸 | 双刃剑：适合事实密集多跳题，但必须配写入验证，否则固化错误 |
+| Episodic（跨任务轨迹样例） | 整条历史轨迹作为 few-shot 范例 | ExpeL 的成功轨迹库；Lightweight 的长期记忆部分 | Case A 中 ExpeL 迁移了一条无关任务的解题"打法" | 收益来自**策略骨架**迁移而非具体内容；跨任务相似度低时是噪声 |
+| Semantic（抽象出的经验/教训） | 从轨迹蒸馏的通用 insight | ExpeL（积累 80 条 insights） | 其余多为噪声且成本最高 | 命门在检索相关性——无关 insight 占着上下文就是纯负担 |
+| Procedural（技能/工作流库） | 可复用的封装动作序列 | Voyager（积累 0 条） | Case D 静默失效 | 和深搜任务族结构性不匹配：轨迹里没有可封装的"技能" |
+| Tool-use（API/工具用法） | 工具调用的可复用方法 | 这次没单独覆盖 | 论文 Figure 7 里 Lightweight 的 tool-use suggestion 属此类 | 推断最适合工具行为可复用的场景（如用 MediaWiki API 查历史版本） |
 
-总的看法：**没有普适最优的记忆形态，任务族决定形态价值**。这正好是 MemEvolve"让架构跟着任务进化"的立论前提，我的 20 条实验从正反两面支持了它：进化产物 Lightweight 确实比两个人工 baseline 稳（唯一在收益 case 上机制清晰、又没有净降分的系统），但它不是免费的（+40% token、+73% 调用），而且同样没解决"错误固化"。
+总的看法：**没有普适最优的记忆形态，任务族决定形态价值**。这正好是 MemEvolve"让架构跟着任务进化"的立论前提，我的实验从正反两面支持了它：进化产物 Lightweight 确实比两个人工 baseline 稳（唯一在收益 case 上机制清晰、又没有净降分的系统），但它不是免费的（+40% token、+73% 调用），而且同样没解决"错误固化"。
 
 ## 5. Limitation 和已实施的修复（题目 v 之一）
 
@@ -146,7 +161,7 @@ Voyager       oxoooooooooooooxoooo
 
 ## 6. meta-evolution 与 harness 自进化的关系，以及我会改哪里（题目 v）
 
-**关系**：我认为 MemEvolve 本质上是 harness 自进化的一个受限特例。完整的 harness 自进化（Darwin Gödel Machine 那一脉）什么都能改——prompt、工具、规划器、甚至进化逻辑自身；MemEvolve 把可进化面收窄到 (Encode, Store, Retrieve, Manage) 四个模块的接口之内。收窄换来三样东西：搜索空间可控、坏变异不会破坏系统其余部分、fitness 信号能归因到记忆行为。代价是天花板被接口锁死——Case B/C 暴露的问题（中间结论无验证、裁量类推理瓶颈、无成本熔断）都落在接口之外，记忆架构进化多少轮都修不到。
+**关系**：我认为 MemEvolve 可以视作 harness 自进化在 memory 子系统上的受限实例。完整的 harness 自进化（Darwin Gödel Machine 那一脉）什么都能改——prompt、工具、规划器、甚至进化逻辑自身；MemEvolve 把可进化面收窄到 (Encode, Store, Retrieve, Manage) 四个模块的接口之内。收窄换来三样东西：搜索空间可控、坏变异不会破坏系统其余部分、fitness 信号能归因到记忆行为。代价是天花板被接口锁死——Case B/C 暴露的问题（中间结论无验证、裁量类推理瓶颈、无成本熔断）都落在接口之外，记忆架构进化多少轮都修不到。
 
 **如果让我改**：
 
@@ -167,6 +182,8 @@ Voyager       oxoooooooooooooxoooo
 | Lightweight 原版 | 18/20 | 264,103 | 27.3 |
 | Lightweight 门控版 | **15/20** | 279,597 | 28.2 |
 
+> **统计口径声明**：n=20、单次运行，**不作显著性结论**。18/20 的 Wilson 95% CI 是 [70%, 97%]，15/20 是 [53%, 89%]，两者大幅重叠——在这个样本量下 90% 与 75% 的差距完全可能被方差吞掉。下面的分析重点放在**机制层面观察到了什么**（轨迹证据），而非"门控让分数降了 3 分"这个数字本身。
+
 **靶子任务（#10 三祠堂）上机制完全生效**：祠堂别名的猜测被正确标成假设；"百科页面未提供坐标"被记录成三条显式缺口；agent 这次是先补齐坐标（带 Wikipedia 来源）再计算；token 从 173 万降到 105 万（-39%）。但答案还是错的（26.85 km）——后来我意识到三个祠堂几乎共线，外心位置对坐标误差极其敏感，这是数值病态问题，不归 memory 层管。
 
 **总分回退的分析**（#5/#9/#16 翻错，没有任务翻对）：#5 的轨迹最有意思——门控其实**抓住了原版固化的一个错误假设**（GB/T 11881-2006 实际是羽毛球国标，不是原版记忆里写的"羽绒标准"），但 agent 接着收集到一堆互相矛盾的"已验证事实"（每球 16 根羽毛 / 每鹅只有 14 根可用 / 单翅 6 根不能混用），在矛盾消解上失败，反而答错了。我的理解是：**验证压力扩大了搜索面、暴露了更多来源矛盾，agent 又没有仲裁矛盾的能力，于是更多的"诚实"换来了更差的聚合**。原版的"过度自信"在一部分题上反而歪打正着。
@@ -178,20 +195,31 @@ Voyager       oxoooooooooooooxoooo
 | 文件 | 说明 |
 |---|---|
 | `REPORT.md` | 本报告 |
+| `results/summary_per_task.csv` | **逐任务汇总表**（100 行 = 5 组 × 20；字段 score/tokens/api_calls/elapsed_time/memory_injected 等，**不含题文**，可公开，支撑本报告所有表/图/网格） |
 | `scripts/summarize_results.py` | 结果汇总脚本（task_id 对齐 + 去重 + 对比表/逐题网格） |
+| `scripts/make_summary_csv.py` | 生成上面那份 CSV |
 | `scripts/make_figures.py` | 报告插图生成脚本（从原始 jsonl 直接出图） |
 | `patches/0001-fix-xbench-accuracy-report.patch` | eval_utils.py 判分统计 bug 修复 |
 | `patches/0002-add-verification-gating.patch` | lightweight working memory 验证门控（方法级 patch，ablation 见 §6.1） |
 | `assets/` | 报告插图 |
-| 结果压缩包（随仓库一并提交） | 5 组原始轨迹 jsonl + 各运行目录 + 记忆库终态归档（含 xBench 解密题文，按官方要求不传公网） |
+| 结果压缩包（线下提供，不入公开仓库） | 5 组原始轨迹 jsonl + 各运行目录 + 记忆库终态归档（含 xBench 解密题文，按官方要求不传公网） |
 
 ## 8. 讨论：与 2025–2026 顶会同类工作的对比与进一步改进方向
 
-写完上面的实验分析后，我调研了 2025–2026 年"记忆系统自进化"方向已被顶会正式接收的论文（接收信息逐一对到 OpenReview / 官方 proceedings / ACL Anthology，arXiv-only 的一律排除），挑了三篇最强的和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
+写完上面的实验分析后，我调研了 2025–2026 年"记忆系统自进化"方向已被顶会正式接收的论文（arXiv-only 的一律排除），挑了三篇最强的和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
+
+> **接收状态的核实说明（请读者注意）**：下面每篇都附了 OpenReview / proceedings / ACL Anthology 链接，会议与年份来自这些来源的单次抓取。但受限于我的核实条件，这些信息**未经多源交叉验证**；且 ICLR 2026 等属较新会议，状态可能随时间变化。正式提交/答辩前请点开链接各自确认一次——这是本节唯一靠外部信息、我无法完全担保的部分。
 
 ### 8.1 筛选
 
-入选三篇：**A-Mem**（NeurIPS 2025 主会，[proceedings](https://proceedings.neurips.cc/paper_files/paper/2025/hash/19909c36f51abc4856b4560aff3d36d6-Abstract-Conference.html)）、**ReasoningBank**（ICLR 2026，[OpenReview](https://openreview.net/forum?id=jL7fwchScm)）、**MemGen**（ICLR 2026，[OpenReview](https://openreview.net/forum?id=vI56m4Iu4e)）。落选说明：Agent Workflow Memory（ICML 2025）已是 EvolveLab 内置 baseline，对比无新意；Memp 在 ARR 2026 在审、不满足"已接收"；HGM / Memento / Mem0 / Memory-R1 接收未核实。另有四篇 harness/工作流进化方向的顶会工作（DGM、AFlow、AgentSquare、Gödel Agent）不属于记忆论文，留作 8.3 节改进建议的机制来源。
+入选三篇：
+- **A-Mem: Agentic Memory for LLM Agents** — NeurIPS 2025 主会（[proceedings](https://proceedings.neurips.cc/paper_files/paper/2025/hash/19909c36f51abc4856b4560aff3d36d6-Abstract-Conference.html) · [OpenReview](https://openreview.net/forum?id=FiM0M8gcct)）
+- **ReasoningBank: Scaling Agent Self-Evolving with Reasoning Memory** — ICLR 2026（[OpenReview](https://openreview.net/forum?id=jL7fwchScm)）
+- **MemGen: Weaving Generative Latent Memory for Self-Evolving Agents** — ICLR 2026（[OpenReview](https://openreview.net/forum?id=vI56m4Iu4e)）
+
+落选说明：Agent Workflow Memory（ICML 2025）已是 EvolveLab 内置 baseline，对比无新意；Memp（ARR 2026 在审）不满足"已接收"；HGM / Memento / Mem0 / Memory-R1 接收状态未核实。
+
+另有四篇 harness/工作流进化方向的顶会工作，本身不是记忆论文，但其进化/搜索机制是 §8.3 改进建议的来源：**DGM** Darwin Gödel Machine（ICLR 2026，[OpenReview](https://openreview.net/forum?id=pUpzQZTvGY)）、**AFlow**（ICLR 2025 Oral，[OpenReview](https://openreview.net/forum?id=z5uVAKwmjf)）、**AgentSquare**（ICLR 2025，[OpenReview](https://openreview.net/forum?id=mPdmDYIQ7f)）、**Gödel Agent**（ACL 2025，[ACL Anthology](https://aclanthology.org/2025.acl-long.1354/)）。
 
 ### 8.2 逐维对比
 

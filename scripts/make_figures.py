@@ -36,7 +36,12 @@ def main(data_dir, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     stats = []
     for fname, label, color, offset in SETTINGS:
-        rows = load(os.path.join(data_dir, fname))
+        path = os.path.join(data_dir, fname)
+        if not os.path.exists(path):
+            # gated/ablation file is optional; skip cleanly if absent
+            print(f"skip (missing): {fname}")
+            continue
+        rows = load(path)
         n = len(rows)
         acc = sum(r["score"] for r in rows.values()) / n * 100
         tok = sum(r["metrics"]["total_tokens"] for r in rows.values()) / n
