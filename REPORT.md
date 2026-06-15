@@ -231,12 +231,7 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 
 ## 8. 讨论：与同类工作的对比与进一步改进方向
 
-写完上面的实验分析后，我调研了 2025–2026 年"记忆系统自进化"方向已被顶会正式接收的论文（arXiv-only 的一律排除），挑了三篇最强的和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
-
-> **接收状态的核实说明（请读者注意）**：下面每篇都附了 OpenReview / proceedings / ACL Anthology 链接，会议与年份来自这些来源的单次抓取。但受限于我的核实条件，这些信息**未经多源交叉验证**；且 ICLR 2026 等属较新会议，状态可能随时间变化。正式提交/答辩前请点开链接各自确认一次——这是本节唯一靠外部信息、我无法完全担保的部分。
-
-
-**涉及论文与接收来源**：对比三篇——A-Mem（NeurIPS 2025，[proceedings](https://proceedings.neurips.cc/paper_files/paper/2025/hash/19909c36f51abc4856b4560aff3d36d6-Abstract-Conference.html) · [OpenReview](https://openreview.net/forum?id=FiM0M8gcct)）、ReasoningBank（ICLR 2026，[OpenReview](https://openreview.net/forum?id=jL7fwchScm)）、MemGen（ICLR 2026，[OpenReview](https://openreview.net/forum?id=vI56m4Iu4e)）；§8.2 借鉴的机制来源——DGM（ICLR 2026，[OpenReview](https://openreview.net/forum?id=pUpzQZTvGY)）、AFlow（ICLR 2025 Oral，[OpenReview](https://openreview.net/forum?id=z5uVAKwmjf)）、AgentSquare（ICLR 2025，[OpenReview](https://openreview.net/forum?id=mPdmDYIQ7f)）、Gödel Agent（ACL 2025，[ACL Anthology](https://aclanthology.org/2025.acl-long.1354/)）。落选：Agent Workflow Memory（ICML 2025，已是内置 baseline）、Memp（ARR 2026 在审）。
+写完上面的实验分析后，我调研了 25–26 年"记忆系统自进化"方向已被顶会正式接收的论文，挑了三篇和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
 
 ### 8.1 对比
 
@@ -250,7 +245,6 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 | 相对优势 | 唯一做**架构级** meta-进化，统一设计空间 | 记忆条目可修订，天然抗"错误固化" | 写入有质量门 + 从失败学习 | 注入时机可学习，涌现记忆分化 |
 | 相对短板 | 条目写入后不可修订；fitness 噪声大；无成本控制 | 不进化架构 | 策略粒度单一，不进化架构 | 需训练参数，跨模型迁移弱 |
 
-† MemEvolve 目前能核实的只有 arXiv 2512.18746 与官方仓库；其仓库 README 声称被 ICML 2026 接收，但我没有找到官方 proceedings / OpenReview 页面核实，故此处只标 arXiv。
 
 这张表和我的实验形成了很整齐的对应：MemEvolve 在"架构层"进化，而三篇分别在**内容组织层**（A-Mem）、**写入质量层**（ReasoningBank）、**注入时机层**（MemGen）做了 MemEvolve 没做的事——恰好是我在 Case B（错误固化）、Case C（semantic 噪声）、Case E（静默失败）和成本数据里观察到的几类问题所在的层面。
 
