@@ -15,6 +15,8 @@ MemEvolve（双层优化）：这是个典型的 bilevel 结构，形式上类�
 
 两个环形成正反馈：更好的架构让 Agent 学得更快，更强的 Agent 产生更高质量的轨迹，给外环提供更精确的适应度信号。
 
+![MemEvolve 方法架构图](assets/memevolve_architecture.png)
+
 ### 主要结论
 性能：在 GAIA、xBench-DS、WebWalkerQA、TaskCraft 四个基准上，MemEvolve 给 SmolAgent 和 Flash-Searcher 带来最高 17.06% 的提升。Flash-Searcher+GPT-5-mini 在 GAIA 上 pass@3 达到 80.61%，超过 OWL-Workforce、CK-Pro 等多智能体系统。而且成本几乎没涨（GAIA 上每任务 $0.085 vs 无记忆基线 $0.086）。
 泛化性：这是比较有说服力的部分——在 TaskCraft 上进化出的记忆系统，不做任何任务特定调整，直接迁移到更难的基准、换成没见过的底座模型（Kimi K2、DeepSeek V3.2）、甚至插到完全不同的 Agent 框架（OWL、CK-Pro）上，都有一致提升。说明它学到的是任务无关的记忆设计原则，而非过拟合某个数据集。作者也坦诚了边界：在共享任务范式内可以泛化，但跨到根本不同的任务族（如具身智能）大概率不行。
