@@ -24,6 +24,7 @@
 ```
 REPORT.md                                      实验报告（核心交付物，含轨迹证据附录）
 results/summary_per_task.csv                   逐任务汇总（100 行，不含题文，可公开，支撑全部表/图）
+results/case_evidence.md                       脱敏 case 证据（store 统计 + 分歧任务 guidance 摘录/归因）
 scripts/summarize_results.py                   结果汇总脚本（task_id 对齐 + 去重）
 scripts/make_summary_csv.py                    生成 results/summary_per_task.csv
 scripts/make_figures.py                        报告插图生成脚本
@@ -44,10 +45,21 @@ assets/                                        报告插图
 # 前提：已 clone MemEvolve 并 cd 到其 Flash-Searcher-main 目录（见下面两段）
 pip install -r requirements.txt                 # Python 3.10
 python -m playwright install chromium           # crawl4ai 的浏览器内核
-cp .env.example .env                            # 填 DeepSeek key + Serper key，
-                                                # DEFAULT_MODEL/裁判模型 = deepseek-v4-flash，WEB_ACCESS_PROVIDER=crawl4ai
+cp .env.example .env                            # 按下面填写
 # 数据：xBench-DS 2505 版加密 CSV 放到 ./data/xbench/DeepSearch.csv，
 #       xbench-evals 仓库 zip 解压为 ./xbench-evals-main/（判分代码依赖）
+```
+
+`.env` 关键项（**裁判模型务必显式设置**，否则 runner 默认落到 `gemini-2.5-flash`、xBench 会判全错）：
+
+```ini
+OPENAI_API_KEY=<你的 DeepSeek key>
+OPENAI_BASE_URL=https://api.deepseek.com/v1     # OpenAI SDK 读这个
+OPENAI_API_BASE=https://api.deepseek.com/v1     # runner 代码读这个，两个都设最稳
+DEFAULT_MODEL=deepseek-v4-flash                 # 被试模型
+DEFAULT_JUDGE_MODEL=deepseek-v4-flash           # 裁判模型（关键！见下方命令也显式传 --judge_model 双保险）
+SERPER_API_KEY=<你的 Serper key>                # 网页搜索
+WEB_ACCESS_PROVIDER=crawl4ai                    # 本地抓取，免 key
 ```
 
 **主实验 4 组（只 apply 0001）：**
@@ -59,19 +71,22 @@ git apply ../memevolve-assessment/patches/0001-fix-xbench-accuracy-report.patch
 cp ../memevolve-assessment/scripts/summarize_results.py Flash-Searcher-main/
 cd Flash-Searcher-main   # 完成上面的“共同准备”
 
-# Run 0: No-Memory 对照
+# Run 0: No-Memory 对照（concurrency=4 仅为省时，见报告 §2 耗时脚注）
 python run_flash_searcher_mm_xbench.py \
     --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/nomem_20.jsonl \
-    --sample_num 20 --max_steps 40 --concurrency 4
+    --judge_model deepseek-v4-flash --sample_num 20 --max_steps 40 --concurrency 4
 
-# Run 1–3: memory_provider 依次换成 lightweight_memory / expel / voyager，每次先清空对应 storage
-rm -rf storage/lightweight_memory
-python run_flash_searcher_mm_xbench.py \
-    --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/lightweight_20.jsonl \
-    --memory_provider lightweight_memory --sample_num 20 --max_steps 40
+# Run 1–3: 三个 memory system（串行，每个跑前清空自己的 storage）
+for p in lightweight_memory expel voyager; do
+    rm -rf "storage/$p"
+    python run_flash_searcher_mm_xbench.py \
+        --infile ./data/xbench/DeepSearch.csv --outfile "./xbench_output/${p%_memory}_20.jsonl" \
+        --memory_provider "$p" --judge_model deepseek-v4-flash --sample_num 20 --max_steps 40
+done
 
 python summarize_results.py xbench_output/*_20.jsonl   # 汇总
 ```
+> 注：上面 `${p%_memory}` 让 lightweight_memory 的输出文件名为 `lightweight_20.jsonl`，expel/voyager 不受影响。
 
 **ablation（额外 apply 0002，用一份干净 checkout）：**
 
@@ -85,7 +100,7 @@ cd Flash-Searcher-main   # 完成“共同准备”
 rm -rf storage/lightweight_memory
 python run_flash_searcher_mm_xbench.py \
     --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/lightweight_gated_20.jsonl \
-    --memory_provider lightweight_memory --sample_num 20 --max_steps 40
+    --memory_provider lightweight_memory --judge_model deepseek-v4-flash --sample_num 20 --max_steps 40
 ```
 
 总成本参考：5 组 100 条约 2,400 万 token，DeepSeek-V4-Flash 计价 20 元左右；全程不需要 GPU。

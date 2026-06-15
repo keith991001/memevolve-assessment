@@ -39,6 +39,8 @@ MemEvolve（双层优化）：这是个典型的 bilevel 结构，形式上类�
 
 > ⚠️ `patches/0002`（验证门控）会改写 `lightweight_memory_provider.py`。它**只用于 §6.1 的 ablation**——主实验四组**绝对不要**应用它，否则跑出来的"原版 Lightweight"已被污染。下面拆成两段，互不混用。
 
+> 完整的环境/数据准备与 `.env` 关键项（**裁判模型 `DEFAULT_JUDGE_MODEL` 必须显式设为 deepseek-v4-flash，否则 runner 默认落到 gemini-2.5-flash、xBench 全判错**；`OPENAI_BASE_URL` 与 `OPENAI_API_BASE` 两个都设）见 README。下面命令均显式传 `--judge_model` 做双保险。
+
 **主实验 4 组（只 apply 0001）：**
 
 ```bash
@@ -46,18 +48,20 @@ git clone https://github.com/bingreeky/MemEvolve.git && cd MemEvolve
 git checkout 6035d56
 git apply <本仓库>/patches/0001-fix-xbench-accuracy-report.patch   # 只修判分统计 bug
 cp <本仓库>/scripts/summarize_results.py Flash-Searcher-main/
-cd Flash-Searcher-main   # 环境：Python 3.10 + requirements.txt，.env 见 .env.example
+cd Flash-Searcher-main   # 完成 README 的环境/数据准备
 
-# Run 0: No-Memory 对照
+# Run 0: No-Memory 对照（concurrency=4 仅为省时，耗时不与串行组横向比较，见 §2 脚注）
 python run_flash_searcher_mm_xbench.py \
     --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/nomem_20.jsonl \
-    --sample_num 20 --max_steps 40 --concurrency 4
+    --judge_model deepseek-v4-flash --sample_num 20 --max_steps 40 --concurrency 4
 
-# Run 1–3: 三个 memory system（memory_provider 依次换成 lightweight_memory / expel / voyager；每次先清空对应 storage）
-rm -rf storage/lightweight_memory
-python run_flash_searcher_mm_xbench.py \
-    --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/lightweight_20.jsonl \
-    --memory_provider lightweight_memory --sample_num 20 --max_steps 40
+# Run 1–3: 三个 memory system（串行，每个跑前清空自己的 storage）
+for p in lightweight_memory expel voyager; do
+    rm -rf "storage/$p"
+    python run_flash_searcher_mm_xbench.py \
+        --infile ./data/xbench/DeepSearch.csv --outfile "./xbench_output/${p%_memory}_20.jsonl" \
+        --memory_provider "$p" --judge_model deepseek-v4-flash --sample_num 20 --max_steps 40
+done
 
 python summarize_results.py xbench_output/*_20.jsonl   # 汇总（绕过 eval_utils 判分 bug，见 §5）
 ```
@@ -73,7 +77,7 @@ cp <本仓库>/scripts/summarize_results.py Flash-Searcher-main/ && cd Flash-Sea
 rm -rf storage/lightweight_memory
 python run_flash_searcher_mm_xbench.py \
     --infile ./data/xbench/DeepSearch.csv --outfile ./xbench_output/lightweight_gated_20.jsonl \
-    --memory_provider lightweight_memory --sample_num 20 --max_steps 40
+    --memory_provider lightweight_memory --judge_model deepseek-v4-flash --sample_num 20 --max_steps 40
 ```
 
 ## 2. 主结果
@@ -83,7 +87,9 @@ python run_flash_searcher_mm_xbench.py \
 | No-Memory | **18/20 (90%)** | 196.8 s | 189,015 | 15.8 | — |
 | **Lightweight**（MemEvolve 进化） | **18/20 (90%)** | 336.9 s (+71%) | 264,103 (+40%) | 27.3 (+73%) | 20/20 |
 | ExpeL（semantic） | **17/20 (85%)** | 257.1 s (+31%) | 274,383 (+45%) | 18.2 (+15%) | 19/20 |
-| Voyager（procedural） | **18/20 (90%)** | 219.9 s (+12%) | 200,074 (+6%) | 16.7 (+6%) | **0/20** |
+| Voyager（procedural） | **18/20 (90%)** | 219.9 s (+12%)† | 200,074 (+6%) | 16.7 (+6%) | **0/20** |
+
+> † **耗时列仅供参考，不作横向结论**：No-Memory 跑的是 `concurrency=4`（4 任务并行，仅为省时），memory 三组为 `concurrency=1`（串行，保证记忆逐条积累）。并发下单任务 wall-clock 受任务间 API/抓取竞争影响，与串行不可直接比较。**准确率、token、API 调用三列不受并发影响、可横向比较**；下文涉及"成本"的结论一律以 token / 调用次数为准，不依赖耗时。
 
 按 `task_id` 对齐的逐题正误（o=对，x=错）：
 
@@ -157,6 +163,8 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 | Procedural（技能/工作流库） | 可复用的封装动作序列 | Voyager（积累 0 条） | Case E 静默失效 | 和深搜任务族结构性不匹配：轨迹里没有可封装的"技能" |
 | Tool-use（API/工具用法） | 工具调用的可复用方法 | 这次没单独覆盖 | 论文 Figure 7 里 Lightweight 的 tool-use suggestion 属此类 | 推断最适合工具行为可复用的场景（如用 MediaWiki API 查历史版本） |
 
+（上表各组的 store 终态计数——ExpeL 80 insights + 17 成功轨迹、Lightweight 41+38、Voyager 0——均可在 `results/case_evidence.md` §一核对，纯计数无题文。）
+
 总的看法：**没有普适最优的记忆形态，任务族决定形态价值**。这正好是 MemEvolve"让架构跟着任务进化"的立论前提，我的实验从正反两面支持了它：进化产物 Lightweight 确实比两个人工 baseline 稳（唯一在收益 case 上机制清晰、又没有净降分的系统），但它不是免费的（+40% token、+73% 调用），而且同样没解决"错误固化"。
 
 ## 5. Limitation 和已实施的修复（题目 v 之一）
@@ -209,7 +217,8 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 | 文件 | 说明 |
 |---|---|
 | `REPORT.md` | 本报告 |
-| `results/summary_per_task.csv` | **逐任务汇总表**（100 行 = 5 组 × 20；字段 score/tokens/api_calls/elapsed_time/memory_injected 等，**不含题文**，可公开，支撑本报告所有表/图/网格） |
+| `results/summary_per_task.csv` | **逐任务汇总表**（100 行 = 5 组 × 20；字段 score/status/tokens/api_calls/elapsed_time/memory_injected/trajectory_logged，**不含题文**，可公开，支撑本报告所有表/图/网格） |
+| `results/case_evidence.md` | **脱敏 case 证据**（store 终态统计 + 4 条分歧任务逐设置的 guidance 摘录/答案/归因 + 不可归因记录），评审不取线下包即可核主要论点 |
 | `scripts/summarize_results.py` | 结果汇总脚本（task_id 对齐 + 去重 + 对比表/逐题网格） |
 | `scripts/make_summary_csv.py` | 生成上面那份 CSV |
 | `scripts/make_figures.py` | 报告插图生成脚本（从原始 jsonl 直接出图） |
