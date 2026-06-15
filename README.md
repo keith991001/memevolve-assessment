@@ -38,10 +38,10 @@ assets/                                        报告插图
 
 > ⚠️ `patches/0002`（验证门控）会改写 `lightweight_memory_provider.py`，**只用于 ablation**。主实验四组**不要**应用它，否则跑出来的"原版 Lightweight"已被污染。主实验和 ablation 各用一份独立 checkout。
 
-**共同准备（环境 + 数据）：**
+**共同准备（环境 + 数据）：** 下面"主实验"或"ablation"任一段把仓库 clone 好、`cd` 进 `Flash-Searcher-main` 之后，先执行这一段，再跑对应的实验命令。
 
 ```bash
-cd Flash-Searcher-main
+# 前提：已 clone MemEvolve 并 cd 到其 Flash-Searcher-main 目录（见下面两段）
 pip install -r requirements.txt                 # Python 3.10
 python -m playwright install chromium           # crawl4ai 的浏览器内核
 cp .env.example .env                            # 填 DeepSeek key + Serper key，

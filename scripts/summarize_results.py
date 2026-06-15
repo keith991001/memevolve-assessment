@@ -26,7 +26,15 @@ def load(path):
     dedup = {}
     for r in rows:
         dedup[r["task_id"]] = r
-    return list(dedup.values())
+
+    # sort by numeric task_id so the per-task grid lines up across settings
+    # (files are written in completion order, which differs under concurrency)
+    def key(tid):
+        try:
+            return (0, int(tid))
+        except (TypeError, ValueError):
+            return (1, str(tid))
+    return [dedup[t] for t in sorted(dedup, key=key)]
 
 
 def summarize(path):
@@ -35,7 +43,7 @@ def summarize(path):
     correct = sum(1 for r in rows if r.get("score") == 1)
     m = [r.get("metrics", {}) for r in rows]
     avg = lambda key: sum(x.get(key, 0) for x in m) / n if n else 0
-    steps = [len(r.get("agent_trajectory", [])) for r in rows]
+    steps = [len(r.get("agent_trajectory") or []) for r in rows]
     return {
         "name": os.path.basename(path).replace(".jsonl", ""),
         "n": n,

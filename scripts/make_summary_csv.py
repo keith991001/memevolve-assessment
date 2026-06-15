@@ -22,9 +22,9 @@ GROUPS = [
     ("voyager_20.jsonl", "voyager"),
     ("lightweight_gated_20.jsonl", "lightweight-gated"),
 ]
-FIELDS = ["setting", "task_id", "score", "total_tokens", "prompt_tokens",
+FIELDS = ["setting", "task_id", "score", "status", "total_tokens", "prompt_tokens",
           "completion_tokens", "api_calls", "elapsed_time",
-          "memory_injected", "injection_steps", "agent_steps"]
+          "memory_injected", "injection_steps", "agent_steps", "trajectory_logged"]
 
 
 def load(path):
@@ -44,14 +44,20 @@ def main(data_dir, out_csv):
         if not os.path.exists(path):
             print(f"skip (missing): {fname}")
             continue
-        for tid, r in load(path).items():
-            traj = r.get("agent_trajectory", [])
-            inj = sum(1 for s in traj if s.get("memory_guidance"))
+        def task_key(item):
+            try:
+                return (0, int(item[0]))
+            except (TypeError, ValueError):
+                return (1, str(item[0]))
+        for tid, r in sorted(load(path).items(), key=task_key):
+            traj = r.get("agent_trajectory")  # may be None if not persisted
+            inj = sum(1 for s in (traj or []) if s.get("memory_guidance"))
             m = r.get("metrics", {})
             out_rows.append({
                 "setting": setting,
                 "task_id": tid,
                 "score": r.get("score"),
+                "status": r.get("status"),
                 "total_tokens": m.get("total_tokens"),
                 "prompt_tokens": m.get("prompt_tokens"),
                 "completion_tokens": m.get("completion_tokens"),
@@ -59,7 +65,8 @@ def main(data_dir, out_csv):
                 "elapsed_time": round(m.get("elapsed_time", 0), 1),
                 "memory_injected": int(inj > 0),
                 "injection_steps": inj,
-                "agent_steps": len(traj),
+                "agent_steps": len(traj) if traj is not None else "",
+                "trajectory_logged": int(traj is not None),
             })
     os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
     with open(out_csv, "w", newline="") as f:
