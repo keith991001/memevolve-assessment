@@ -151,11 +151,11 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 
 ### Case E（横切发现）：Voyager 全程零注入，实际是第二个无记忆基线
 
-跑完 20 条任务我去看 `voyager_memory.json`，里面 `memories: []`——一条技能都没存进去，自然也没有任何检索和注入。回头想原因：Voyager 的 encode 是为 Minecraft 那种"可复用代码技能"设计的，深搜轨迹（搜索词 + 网页摘要）里没有它能提取的东西，而 EvolveLab 的复现版对这种情况**静默失败**——不报错、不告警，表面上正常跑完。所以它的 18/20 只能解读为基线的又一次采样，不能当作 procedural memory 有效的证据。
+跑完 20 条任务发现 `voyager_memory.json`，里面 `memories: []`——一条技能都没存进去，自然也没有任何检索和注入。原因可能是：Voyager 的 encode 是为 Minecraft 那种"可复用代码技能"设计的，深搜轨迹（搜索词 + 网页摘要）里没有它能提取的东西，而 EvolveLab 的复现版对这种情况**静默失败**——不报错、不告警，表面上正常跑完。所以它的 18/20 只能解读为基线的又一次采样，不能当作 procedural memory 有效的证据。
 
 ## 4. 哪种形态的 memory 更有效？（题目 iv）
 
-题目问的是 episodic / semantic / procedural / tool-use 四类。先做个澄清，因为它影响下面怎么归类：**Lightweight 注入的主要是 working memory（任务内的状态保持——当前已知事实、待办约束），这其实不在题目列的四类里**；而 episodic memory 严格指**跨任务的轨迹样例**。Lightweight 实际是 working + 轻量 episodic 的混合体，不是纯 episodic。把这层说清后按四类（+ working）分述：
+题目写的是 episodic / semantic / procedural / tool-use 四类。先做个澄清，因为它影响下面怎么归类：**Lightweight 注入的主要是 working memory（任务内的状态保持——当前已知事实、待办约束），这其实不在题目列的四类里**；而 episodic memory 严格指**跨任务的轨迹样例**。Lightweight 实际是 working + 轻量 episodic 的混合体，不是纯 episodic。把这层说清后按四类（+ working）分述：
 
 | 形态 | 严格定义 | 本实验载体 | 证据 | 我的判断 |
 |---|---|---|---|---|
@@ -231,7 +231,7 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 
 ## 8. 讨论：与同类工作的对比与进一步改进方向
 
-写完上面的实验分析后，我调研了 25–26 年"记忆系统自进化"方向已被顶会正式接收的论文，挑了三篇和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
+写完上面的实验分析后，我调研了 25–26 年"记忆系统自进化"方向论文，挑了三篇和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
 
 ### 8.1 对比
 
@@ -336,4 +336,4 @@ ExpeL Similar successful case for '在首次提到"两面包夹芝士"的视频�
 
 第 1 条纠正了原版的错误假设（对照附录 A 第 2 条），但第 3–6 条互相矛盾且都标着"已验证"，agent 最终聚合失败答 8（golden=12）。这就是 §6.1 说的：验证门控暴露矛盾，但不解决矛盾。
 
-*实验日期：2026-06-11。环境：macOS / Python 3.10 / DeepSeek API。*
+*实验日期：2026-06。环境：macOS / Python 3.10 / DeepSeek API。*
