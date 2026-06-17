@@ -169,14 +169,17 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 
 总的看法：**没有普适最优的记忆形态，任务族决定形态价值**。这正好是 MemEvolve"让架构跟着任务进化"的立论前提，我的实验从正反两面支持了它：进化产物 Lightweight 确实比两个人工 baseline 稳（唯一在收益 case 上机制清晰、又没有净降分的系统），但它不是免费的（+40% token、+73% 调用），而且同样没解决"错误固化"。
 
-## 5. Limitation 和已实施的修复（题目 v 之一）
+## 5. MemEvolve 论文 / 方法的 limitation（题目 v 之一）
 
-1. **xBench 判分统计 bug（已修复， patch 见 `patches/0001`）**：`eval_utils.py` 的 `generate_unified_report` 按 GAIA 的字符串字段 `judgement` 统计正误，但 xBench runner 写入的是数字字段 `score`，所以 xBench 的官方报告永远显示 `Accuracy: 0.00%`（资源统计正常）。我加了一个兼容两种 schema 的判定函数，修复后同一份数据从 0% 变为正确的 90%。
-2. **结果文件是追加写入，行序是完成顺序**：重跑同名 outfile 会混进旧记录；开并发时行序和任务序对不上，跨组对比必须按 `task_id` 对齐。我写的 `summarize_results.py` 做了去重（每个 task_id 保留最后一条）和按 id 对齐。
-3. **记忆写入静默失败**（Case E）：provider 存了 0 条记忆不会有任何告警，很容易误以为 memory 在工作。建议 run 结束时输出 store/retrieve 命中统计。
-4. **没有成本止损**：单任务可以烧到 195 万 token 而不触发任何熔断。
-5. **进化产物自带 7 条冷启动记忆**：`lightweight_memory` 初始化就注入 5 条策略 + 2 条操作记忆。也就是说 meta-evolution 把一部分"经验"固化进了架构本身，严格说它和"从空记忆起步"的 baseline 不在同一起跑线，对比时应该披露。
-6. **裁判与被试同模型**：判分和作答都是 `deepseek-v4-flash`，有自我偏好的风险（这次答案多是数值和实体，影响应该有限）。
+结合论文方法和我自己的 20 条任务实验，我认为 MemEvolve 的主要不足不在于"memory 是否有用"，而在于它把 memory architecture 作为可进化对象之后，仍然缺少足够细的验证、归因和运行时控制。
+
+1. **fitness 信号太粗，缺少 memory-level credit assignment**：外环主要按任务成功率、token 成本、延迟给整个架构打分，但不知道具体是哪条 memory、哪次检索、哪个写入决策带来了收益或伤害。Case B 里 Lightweight 把残缺坐标固化后导致任务失败，Case C 里 ExpeL 召回无关案例带偏 agent；这些问题如果只看最终 pass/fail，很难归因到某条记忆或某个 Retrieve/Encode 决策。
+2. **写入质量和事实验证没有成为一等机制**：论文把 Encode 作为可进化模块，但没有统一要求 provenance、verified/unverified 标注、冲突检测或来源仲裁。我的实验里最典型的失败就是"中间结论一旦进入 working memory，就被后续步骤当成事实"。这说明 MemEvolve 能搜索不同记忆形态，但还没有把"记忆是否可信"作为稳定的架构约束。
+3. **外环搜索成本高且统计稳定性不足**：论文每轮对候选架构跑一批轨迹，再用 Pareto 排序保留 top-K。这个流程比手写 memory 更自动，但每个候选都要真实跑 agent，API 成本和时间成本很高；同时 K=1/小批量排序容易受任务采样方差影响。我的 20 条实验里同一道任务在不同设置下 token 从 36 万到 195 万、对错也会翻转，说明单轮排名噪声不可忽视。
+4. **设计空间被 E/U/R/G 接口锁住，不能修 harness 层问题**：MemEvolve 进化的是 Encode、Store、Retrieve、Manage，但很多失败来自 planner、工具选择、验证器、预算分配或答案裁量，而不是 memory 本身。Case D 这种边界裁量 + 聚合统计题，memory 很难解决；Case B 的几何计算病态问题也需要数值验证/工具策略，而不只是换一种记忆格式。
+5. **泛化边界仍然依赖任务族相似性**：论文强调 TaskCraft 上进化出的记忆可以迁移到 xBench/WebWalkerQA 等深搜任务，但这些任务共享搜索、检索、网页证据聚合的基本范式。若换到具身控制、代码修复、长程 GUI 操作或强工具执行环境，最优 memory 形态和失败模式可能完全不同，已有的 meta-evolved architecture 未必能直接迁移。
+6. **Manage 模块相对薄弱，缺少记忆健康度自检**：论文设计空间包含 Manage，但实际很多 provider 的维护、剪枝、遗忘、冲突合并都比较弱。我的 Voyager run 出现 `memories: []` 但流程静默结束，说明框架层面缺少统一的 store/retrieve 命中率、空库告警、记忆污染检测和成本熔断。
+7. **"自动进化"仍依赖强 LLM 和人工设定的搜索边界**：MemEvolve 的 Diagnose-and-Design 由 LLM 读日志、诊断缺陷、生成新 provider，本质上还是被 prompt、初始架构、验证器和允许修改位置约束住。它比人工手写 memory 更自动，但还不是开放式地进化整个 agent harness，也没有让 meta-evolver 自己积累"哪些架构变异曾经失败"的长期经验。
 
 
 ## 6. meta-evolution 与 harness 自进化的关系，以及我会改哪里（题目 v）
