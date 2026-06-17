@@ -233,7 +233,7 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 | `results/summary_per_task.csv` | **逐任务汇总表**（100 行 = 5 组 × 20；字段 score/status/tokens/api_calls/elapsed_time/memory_injected/trajectory_logged，**不含题文**，可公开，支撑本报告所有表/图/网格） |
 | `results/case_evidence.md` | **脱敏 case 证据**（store 终态统计 + 4 条分歧任务逐设置的 guidance 摘录/答案/归因 + 不可归因记录），评审不取线下包即可核主要论点 |
 | `scripts/summarize_results.py` | 结果汇总脚本（task_id 对齐 + 去重 + 对比表/逐题网格） |
-| `scripts/make_summary_csv.py` | 生成上面那份 CSV |
+| `scripts/make_summary_csv.py` | 生成 CSV |
 | `scripts/make_figures.py` | 报告插图生成脚本（从原始 jsonl 直接出图） |
 | `patches/0001-fix-xbench-accuracy-report.patch` | eval_utils.py 判分统计 bug 修复 |
 | `patches/0002-add-verification-gating.patch` | lightweight working memory 验证门控（方法级 patch，ablation 见 §6.1） |
@@ -242,7 +242,7 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 
 ## 8. 讨论：相关工作对 §6 的补充
 
-写完上面的实验分析后，我调研了 25–26 年"记忆系统自进化"方向论文，挑了三篇和 MemEvolve 对比。这里的目的不是把 §6 合并成一套更散的改进清单，而是用同类工作说明：我在 §5/§6 里指出的问题，在领域内分别对应哪些已有解法或可借鉴方向。
+写完上面的实验分析后，我调研了 25–26 年"记忆系统自进化"方向论文，挑了三篇和 MemEvolve 对比。
 
 ### 8.1 对比
 
