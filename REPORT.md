@@ -191,8 +191,6 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 | Memory meta-evolution | memory 子系统 | Encode / Store / Retrieve / Manage，例如写入格式、检索策略、注入内容、记忆维护 | planner、工具选择、验证器、答案裁量、全局预算控制 |
 | Harness self-evolution | 整个 agent 运行框架 | prompt、planner、tools、memory、verifier、budget、evaluator，甚至外层进化逻辑 | 搜索空间更大，安全性和归因更难 |
 
-这张表也解释了为什么我把 §6 和 §8 分开：§6 是对题目 v 的正面回答，讨论 MemEvolve 在 harness 自进化坐标系里的位置；§8 则是相关工作如何补足这些短板，不是另起一套主线。
-
 **因此，如果让我沿着 memory meta-evolution 这条线改**：
 
 1. **给 Retrieve 加"验证门控"（针对 Case B）**：注入记忆时区分"已验证事实"和"待验证假设"，坐标、数值类中间结论强制要求来源标注，让 agent 对未验证项保留质疑权。这条我实际做了，见 §6.1。
