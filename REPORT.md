@@ -171,12 +171,13 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 
 ## 5. Limitation 和已实施的修复（题目 v 之一）
 
-1. **xBench 判分统计 bug（我修了，patch 见 `patches/0001`）**：`eval_utils.py` 的 `generate_unified_report` 按 GAIA 的字符串字段 `judgement` 统计正误，但 xBench runner 写入的是数字字段 `score`，所以 xBench 的官方报告永远显示 `Accuracy: 0.00%`（资源统计正常）。我加了一个兼容两种 schema 的判定函数，修复后同一份数据从 0% 变为正确的 90%。
+1. **xBench 判分统计 bug（已修复， patch 见 `patches/0001`）**：`eval_utils.py` 的 `generate_unified_report` 按 GAIA 的字符串字段 `judgement` 统计正误，但 xBench runner 写入的是数字字段 `score`，所以 xBench 的官方报告永远显示 `Accuracy: 0.00%`（资源统计正常）。我加了一个兼容两种 schema 的判定函数，修复后同一份数据从 0% 变为正确的 90%。
 2. **结果文件是追加写入，行序是完成顺序**：重跑同名 outfile 会混进旧记录；开并发时行序和任务序对不上，跨组对比必须按 `task_id` 对齐。我写的 `summarize_results.py` 做了去重（每个 task_id 保留最后一条）和按 id 对齐。
 3. **记忆写入静默失败**（Case E）：provider 存了 0 条记忆不会有任何告警，很容易误以为 memory 在工作。建议 run 结束时输出 store/retrieve 命中统计。
 4. **没有成本止损**：单任务可以烧到 195 万 token 而不触发任何熔断。
 5. **进化产物自带 7 条冷启动记忆**：`lightweight_memory` 初始化就注入 5 条策略 + 2 条操作记忆。也就是说 meta-evolution 把一部分"经验"固化进了架构本身，严格说它和"从空记忆起步"的 baseline 不在同一起跑线，对比时应该披露。
 6. **裁判与被试同模型**：判分和作答都是 `deepseek-v4-flash`，有自我偏好的风险（这次答案多是数值和实体，影响应该有限）。
+
 
 ## 6. meta-evolution 与 harness 自进化的关系，以及我会改哪里（题目 v）
 
