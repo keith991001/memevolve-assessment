@@ -182,11 +182,18 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 7. **"自动进化"仍依赖强 LLM 和人工设定的搜索边界**：MemEvolve 的 Diagnose-and-Design 由 LLM 读日志、诊断缺陷、生成新 provider，本质上还是被 prompt、初始架构、验证器和允许修改位置约束住。它比人工手写 memory 更自动，但还不是开放式地进化整个 agent harness，也没有让 meta-evolver 自己积累"哪些架构变异曾经失败"的长期经验。
 
 
-## 6. meta-evolution 与 harness 自进化的关系，以及我会改哪里（题目 v）
+## 6. Memory meta-evolution 与 harness 自进化的关系，以及我的改进尝试（题目 v）
 
-**关系**：我认为 MemEvolve 可以视作 harness 自进化在 memory 子系统上的受限实例。完整的 harness 自进化（Darwin Gödel Machine 那一脉）什么都能改——prompt、工具、规划器、甚至进化逻辑自身；MemEvolve 把可进化面收窄到 (Encode, Store, Retrieve, Manage) 四个模块的接口之内。收窄换来三样东西：搜索空间可控、坏变异不会破坏系统其余部分、fitness 信号能归因到记忆行为。代价是天花板被接口锁死——Case B/D 暴露的问题（中间结论无验证、裁量类推理瓶颈、无成本熔断）都落在接口之外，记忆架构进化多少轮都修不到。
+**关系**：我认为 MemEvolve 可以视作 harness 自进化在 memory 子系统上的受限实例。完整的 harness 自进化（Darwin Gödel Machine 那一脉）可以改 prompt、工具、规划器、验证器、预算控制，甚至进化逻辑自身；MemEvolve 把可进化面收窄到 (Encode, Store, Retrieve, Manage) 四个 memory 模块的接口之内。收窄换来三样东西：搜索空间可控、坏变异不会破坏系统其余部分、fitness 信号更容易归因到记忆行为。代价是天花板被接口锁死——Case B/D 暴露的问题（中间结论无验证、裁量类推理瓶颈、无成本熔断）很多都落在接口之外，记忆架构进化多少轮都未必能修到。
 
-**如果让我改**：
+| 层级 | 进化对象 | 能改什么 | 不能直接解决什么 |
+|---|---|---|---|
+| Memory meta-evolution | memory 子系统 | Encode / Store / Retrieve / Manage，例如写入格式、检索策略、注入内容、记忆维护 | planner、工具选择、验证器、答案裁量、全局预算控制 |
+| Harness self-evolution | 整个 agent 运行框架 | prompt、planner、tools、memory、verifier、budget、evaluator，甚至外层进化逻辑 | 搜索空间更大，安全性和归因更难 |
+
+这张表也解释了为什么我把 §6 和 §8 分开：§6 是对题目 v 的正面回答，讨论 MemEvolve 在 harness 自进化坐标系里的位置；§8 则是相关工作如何补足这些短板，不是另起一套主线。
+
+**因此，如果让我沿着 memory meta-evolution 这条线改**：
 
 1. **给 Retrieve 加"验证门控"（针对 Case B）**：注入记忆时区分"已验证事实"和"待验证假设"，坐标、数值类中间结论强制要求来源标注，让 agent 对未验证项保留质疑权。这条我实际做了，见 §6.1。
 2. **把资源消耗下沉为运行时信号**：论文的 fitness 已经含 cost/delay，但只在架构选择层起作用；应该下沉到 Manage 模块——单任务 token 超阈值就触发记忆侧的止损摘要。
@@ -233,9 +240,9 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 | `assets/` | 报告插图 |
 | 结果压缩包（线下提供，不入公开仓库） | 5 组原始轨迹 jsonl + 各运行目录 + 记忆库终态归档（含 xBench 解密题文，按官方要求不传公网） |
 
-## 8. 讨论：与同类工作的对比与进一步改进方向
+## 8. 讨论：相关工作对 §6 的补充
 
-写完上面的实验分析后，我调研了 25–26 年"记忆系统自进化"方向论文，挑了三篇和 MemEvolve 对比，想看看我实验里发现的问题在领域内有没有现成的解法。
+写完上面的实验分析后，我调研了 25–26 年"记忆系统自进化"方向论文，挑了三篇和 MemEvolve 对比。这里的目的不是把 §6 合并成一套更散的改进清单，而是用同类工作说明：我在 §5/§6 里指出的问题，在领域内分别对应哪些已有解法或可借鉴方向。
 
 ### 8.1 对比
 
@@ -252,7 +259,9 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 
 这张表和我的实验形成了很整齐的对应：MemEvolve 在"架构层"进化，而三篇分别在**内容组织层**（A-Mem）、**写入质量层**（ReasoningBank）、**注入时机层**（MemGen）做了 MemEvolve 没做的事——恰好是我在 Case B（错误固化）、Case C（semantic 噪声）、Case E（静默失败）和成本数据里观察到的几类问题所在的层面。
 
-### 8.2 改进方向
+### 8.2 对 §6 改进方向的映射
+
+这些相关工作可以看成对 §6 中几个改进方向的外部佐证：
 
 1. **选择机制：archive + 树搜索替代 K=1 贪心**（针对 §5 的 fitness 噪声）。借鉴 DGM（ICLR 2026）的开放式 archive——保留全部历史候选、按"性能+新颖性"采样父代，以及 AFlow（ICLR 2025 Oral）的 MCTS 回传统计。落点在 `evolve_cli.py` 的 tournament：维护 archive、淘汰前做配对 bootstrap 检验。我实测同一道题在不同设置下 token 36 万~195 万、对错来回翻转，60 条轨迹的单次排名基本是噪声，这条优先级最高。AgentSquare（ICLR 2025）的 performance predictor 还能在花钱跑轨迹前预筛掉明显差的候选。
 2. **写入验证标准化：把 self-judge 纳入 Encode 接口**（针对 Case B 错误固化）。借鉴 ReasoningBank：写入前先判轨迹成败，成功蒸馏策略、失败蒸馏反模式，而不是把原始中间结论直接入库。我的验证门控 ablation 证明"只标记不仲裁"不够（暴露矛盾但解决不了矛盾），ReasoningBank 是在蒸馏阶段就完成质量把关。做法：在 `BaseMemoryProvider.take_in_memory` 前加统一 judge 钩子，让它成为设计空间的固定算子。
