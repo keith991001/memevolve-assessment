@@ -155,19 +155,19 @@ Voyager       ooooxooooxoooooooooo   错: 5, 10
 
 ## 4. 哪种形态的 memory 更有效？（题目 iv）
 
-题目写的是 episodic / semantic / procedural / tool-use 四类。先做个澄清，因为它影响下面怎么归类：**Lightweight 注入的主要是 working memory（任务内的状态保持——当前已知事实、待办约束），这其实不在题目列的四类里**；而 episodic memory 严格指**跨任务的轨迹样例**。Lightweight 实际是 working + 轻量 episodic 的混合体，不是纯 episodic。把这层说清后按四类（+ working）分述：
+题目讨论的是 episodic / semantic / procedural / tool-use 四类 memory。这里需要先区分一点：**Lightweight 主要注入的是 working memory，即任务内状态保持；它不完全属于题目列出的四类**。ExpeL 同时包含 episodic 成功轨迹和 semantic insights；Voyager 则代表 procedural memory。基于我的实验，结论不是"哪一种 memory 永远最好"，而是：**memory 是否有效取决于任务族里最可复用的东西是什么**。
 
-| 形态 | 严格定义 | 本实验载体 | 证据 | 我的判断 |
+| Memory 类型 | 适合复用什么 | 适合的任务类型 | 本实验中的观察 | 风险 |
 |---|---|---|---|---|
-| Working（任务内状态保持） | 当前任务的中间事实/约束，任务结束即弃 | Lightweight 的 guidance 注入（主体） | Case A 救场、Case B 闯祸 | 双刃剑：适合事实密集多跳题，但必须配写入验证，否则固化错误 |
-| Episodic（跨任务轨迹样例） | 整条历史轨迹作为 few-shot 范例 | ExpeL 的成功轨迹库；Lightweight 的长期记忆部分 | Case A 迁移成功；Case C 召回无关案例反被带偏 | 收益来自**策略骨架**迁移而非具体内容；跨任务相似度低时是噪声 |
-| Semantic（抽象出的经验/教训） | 从轨迹蒸馏的通用 insight | ExpeL（积累 80 条 insights） | Case C 是典型失效；其余多为噪声且成本最高 | 命门在检索相关性——无关 insight 占着上下文就是纯负担 |
-| Procedural（技能/工作流库） | 可复用的封装动作序列 | Voyager（积累 0 条） | Case E 静默失效 | 和深搜任务族结构性不匹配：轨迹里没有可封装的"技能" |
-| Tool-use（API/工具用法） | 工具调用的可复用方法 | 这次没单独覆盖 | 论文 Figure 7 里 Lightweight 的 tool-use suggestion 属此类 | 推断最适合工具行为可复用的场景（如用 MediaWiki API 查历史版本） |
+| Episodic memory | 相似任务的完整轨迹、成功/失败案例 | 案例相似度高的任务，如客服、debug、多跳检索、案例分析 | ExpeL 在 Case A 中迁移了"拆子目标 + 多检索式 + 交叉验证"的解题策略 | 相似度判断错时会召回无关轨迹，Case C 就被无关案例带偏 |
+| Semantic memory | 抽象经验、规则、领域知识 | 规则稳定、知识可长期复用的任务，如领域问答、项目助手、策略总结 | ExpeL 积累了 80 条 insights，但整体成本最高，说明 insight 检索质量很关键 | 过度抽象或低相关 insight 会占用上下文，变成噪声 |
+| Procedural memory | 可复用动作流程或技能 | 具身智能、GUI 自动化、RPA、代码执行、固定实验流程 | Voyager 在本实验中没有存入任何技能，`memories: []`，所以不能证明 procedural memory 有效 | 深搜问答里很难抽出稳定"技能"，不适合直接套 Voyager 式 procedural memory |
+| Tool-use memory | 工具/API/搜索方式的调用经验 | 强工具依赖任务，如 web research、数据库查询、代码工具链、网页操作 | 本实验没有单独 ablation，但深搜任务明显依赖搜索式、来源选择和验证工具 | 工具接口或网页结构变化时容易过期，需要更新和验证 |
+| Working memory | 当前任务内事实、约束、待办事项 | 长链路、多证据、多步骤推理任务 | Lightweight 在 Case A 帮助保持正确框架，但 Case B 固化了未验证坐标 | 如果缺少 provenance 和验证门控，会把早期错误当成事实钉死 |
 
 （上表各组的 store 终态计数——ExpeL 80 insights + 17 成功轨迹、Lightweight 41+38、Voyager 0——均可在 `results/case_evidence.md` §一核对，纯计数无题文。）
 
-总的看法：**没有普适最优的记忆形态，任务族决定形态价值**。这正好是 MemEvolve"让架构跟着任务进化"的立论前提，我的实验从正反两面支持了它：进化产物 Lightweight 确实比两个人工 baseline 稳（唯一在收益 case 上机制清晰、又没有净降分的系统），但它不是免费的（+40% token、+73% 调用），而且同样没解决"错误固化"。
+总结来说，memory 形态没有普适最优解，关键取决于任务族中最可复用的信息是什么：相似经历适合 episodic memory，稳定规则适合 semantic memory，可重复动作适合 procedural memory，工具调用经验适合 tool-use memory。对于 deep research / 多跳网页问答任务，主要可复用的是任务内状态、检索验证策略和工具使用方式，因此 working memory 与 tool-use memory 更贴近任务需求；episodic / semantic memory 有条件有效，但依赖高质量检索；procedural memory 更适合具身控制、GUI 自动化或代码执行等动作流程稳定的任务。这正好呼应 MemEvolve 的核心观点：memory architecture 应该随任务分布而变，而不是预设一种固定形态。
 
 ## 5. MemEvolve 论文 / 方法的 limitation（题目 v 之一）
 
